@@ -13,7 +13,12 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserResponse
+from pydantic import BaseModel
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+    
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -104,6 +109,30 @@ def login_access_token(
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+@router.post("/change-password")
+def change_password(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    request: ChangePasswordRequest,  # Nhận request dưới dạng Pydantic model
+) -> Any:
+    """
+    Change user password.
+    """
+    # Kiểm tra mật khẩu cũ có đúng không
+    if not security.verify_password(request.old_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect old password",
+        )
+    
+    # Cập nhật mật khẩu mới
+    current_user.hashed_password = security.get_password_hash(request.new_password)
+    db.commit()
+    db.refresh(current_user)
+    
+    return {"success": True, "message": "Password changed successfully"}
+    
 @router.post("/test-token", response_model=UserResponse)
 def test_token(current_user: User = Depends(get_current_user)) -> Any:
     """
