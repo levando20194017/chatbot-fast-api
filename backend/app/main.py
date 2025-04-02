@@ -1,11 +1,12 @@
 import logging
-
+import os
 from app.api.api_v1.api import api_router
 from app.api.openapi.api import router as openapi_router
 from app.core.config import settings
 # from app.core.minio import init_minio
 from app.startup.migarate import DatabaseMigrator
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +17,21 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
+)
+
+origins = [
+    "http://localhost:3000",  # Nếu FE chạy trên React/Next.js cổng 3000
+    os.getenv(
+        "BACKEND_CORS_ORIGINS"
+    ),  # Thay thế bằng domain thật của FE
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Cho phép các domain này gọi API
+    allow_credentials=True,
+    allow_methods=["*"],  # Cho phép tất cả phương thức (GET, POST, PUT, DELETE, ...)
+    allow_headers=["*"],  # Cho phép tất cả headers
 )
 
 # Include routers
