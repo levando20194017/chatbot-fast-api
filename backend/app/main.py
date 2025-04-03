@@ -21,6 +21,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:3000",  # Nếu FE chạy trên React/Next.js cổng 3000
+    "http://10.1.35.124:3000",
     os.getenv(
         "BACKEND_CORS_ORIGINS"
     ),  # Thay thế bằng domain thật của FE
