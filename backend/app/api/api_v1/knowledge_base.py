@@ -13,7 +13,7 @@ import asyncio
 
 from app.db.session import get_db
 from app.models.user import User
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_superuser
 from app.models.knowledge import KnowledgeBase, Document, ProcessingTask, DocumentChunk, DocumentUpload
 from app.schemas.knowledge import (
     KnowledgeBaseCreate,
@@ -43,7 +43,7 @@ def create_knowledge_base(
     *,
     db: Session = Depends(get_db),
     kb_in: KnowledgeBaseCreate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_superuser)
 ) -> Any:
     """
     Create new knowledge base.
@@ -62,7 +62,7 @@ def create_knowledge_base(
 @router.get("", response_model=List[KnowledgeBaseResponse])
 def get_knowledge_bases(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_superuser),
     skip: int = 0,
     limit: int = 100
 ) -> Any:
@@ -83,7 +83,7 @@ def get_knowledge_base(
     *,
     db: Session = Depends(get_db),
     kb_id: int,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_superuser)
 ) -> Any:
     """
     Get knowledge base by ID.
@@ -114,7 +114,7 @@ def update_knowledge_base(
     db: Session = Depends(get_db),
     kb_id: int,
     kb_in: KnowledgeBaseUpdate,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_superuser)
 ) -> Any:
     """
     Update knowledge base.
