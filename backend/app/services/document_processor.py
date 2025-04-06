@@ -28,7 +28,9 @@ from minio.error import MinioException
 from minio.commonconfig import CopySource
 from app.services.vector_store import VectorStoreFactory
 from app.services.embedding.embedding_factory import EmbeddingsFactory
+import shutil
 
+base_path = "D:\WORK_VTI\Chatbot\document"
 class UploadResult(BaseModel):
     file_path: str
     file_name: str
@@ -177,260 +179,295 @@ class PreviewResult(BaseModel):
 #         file_hash=file_hash
 #     )
 
-# async def preview_document(file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> PreviewResult:
-#     """Step 2: Generate preview chunks"""
-#     # Get file from MinIO
-#     minio_client = get_minio_client()
-#     _, ext = os.path.splitext(file_path)
-#     ext = ext.lower()
+async def preview_document(file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> PreviewResult:
+    """Step 2: Generate preview chunks"""
+    # Get file from MinIO
+    # minio_client = get_minio_client()
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
     
-#     # Download to temp file
-#     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
-#         minio_client.fget_object(
-#             bucket_name=settings.MINIO_BUCKET_NAME,
-#             object_name=file_path,
-#             file_path=temp_file.name
-#         )
-#         temp_path = temp_file.name
+    # Download to temp file
+    # with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+    #     minio_client.fget_object(
+    #         bucket_name=settings.MINIO_BUCKET_NAME,
+    #         object_name=file_path,
+    #         file_path=temp_file.name
+    #     )
+    #     temp_path = temp_file.name
     
-#     try:
-#         # Select appropriate loader
-#         if ext == ".pdf":
-#             loader = PyPDFLoader(temp_path)
-#         elif ext == ".docx":
-#             loader = Docx2txtLoader(temp_path)
-#         elif ext == ".md":
-#             loader = UnstructuredMarkdownLoader(temp_path)
-#         else:  # Default to text loader
-#             loader = TextLoader(temp_path)
+    try:
+        # Select appropriate loader
+        if ext == ".pdf":
+            # loader = PyPDFLoader(temp_path)
+            loader = PyPDFLoader(file_path)
+        elif ext == ".docx":
+            # loader = Docx2txtLoader(temp_path)
+            loader = Docx2txtLoader(file_path)
+        elif ext == ".md":
+            # loader = UnstructuredMarkdownLoader(temp_path)
+            loader = UnstructuredMarkdownLoader(file_path)
+        else:  # Default to text loader
+            # loader = TextLoader(temp_path)
+            loader = TextLoader(file_path)
         
-#         # Load and split the document
-#         documents = loader.load()
-#         text_splitter = RecursiveCharacterTextSplitter(
-#             chunk_size=chunk_size,
-#             chunk_overlap=chunk_overlap
-#         )
-#         chunks = text_splitter.split_documents(documents)
+        # Load and split the document
+        documents = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+        chunks = text_splitter.split_documents(documents)
         
-#         # Convert to preview format
-#         preview_chunks = [
-#             TextChunk(
-#                 content=chunk.page_content,
-#                 metadata=chunk.metadata
-#             )
-#             for chunk in chunks
-#         ]
+        # Convert to preview format
+        preview_chunks = [
+            TextChunk(
+                content=chunk.page_content,
+                metadata=chunk.metadata
+            )
+            for chunk in chunks
+        ]
         
-#         return PreviewResult(
-#             chunks=preview_chunks,
-#             total_chunks=len(chunks)
-#         )
-#     finally:
-#         os.unlink(temp_path)
+        return PreviewResult(
+            chunks=preview_chunks,
+            total_chunks=len(chunks)
+        )
+    finally:
+        # os.unlink(temp_path)
+        os.unlink(file_path)
 
-# async def process_document_background(
-#     temp_path: str,
-#     file_name: str,
-#     kb_id: int,
-#     task_id: int,
-#     db: Session = None,
-#     chunk_size: int = 1000,
-#     chunk_overlap: int = 200
-# ) -> None:
-#     """Process document in background"""
-#     logger = logging.getLogger(__name__)
-#     logger.info(f"Starting background processing for task {task_id}, file: {file_name}")
+async def process_document_background(
+    temp_path: str,
+    file_name: str,
+    kb_id: int,
+    task_id: int,
+    db: Session = None,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200
+) -> None:
+    """Process document in background"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting background processing for task {task_id}, file: {file_name}")
 
-#     # if we don't pass in db, create a new database session
-#     if db is None:
-#         db = SessionLocal()
-#         should_close_db = True
-#     else:
-#         should_close_db = False
+    # if we don't pass in db, create a new database session
+    if db is None:
+        db = SessionLocal()
+        should_close_db = True
+    else:
+        should_close_db = False
     
-#     task = db.query(ProcessingTask).get(task_id)
-#     if not task:
-#         logger.error(f"Task {task_id} not found")
-#         return
+    task = db.query(ProcessingTask).get(task_id)
+    if not task:
+        logger.error(f"Task {task_id} not found")
+        return
     
-#     try:
-#         logger.info(f"Task {task_id}: Setting status to processing")
-#         task.status = "processing"
-#         db.commit()
+    try:
+        logger.info(f"Task {task_id}: Setting status to processing")
+        task.status = "processing"
+        db.commit()
         
-#         # 1. 从临时目录下载文件
-#         minio_client = get_minio_client()
-#         try:
-#             local_temp_path = f"/tmp/temp_{task_id}_{file_name}"  # 使用系统临时目录
-#             logger.info(f"Task {task_id}: Downloading file from MinIO: {temp_path} to {local_temp_path}")
-#             minio_client.fget_object(
-#                 bucket_name=settings.MINIO_BUCKET_NAME,
-#                 object_name=temp_path,
-#                 file_path=local_temp_path
-#             )
-#             logger.info(f"Task {task_id}: File downloaded successfully")
-#         except MinioException as e:
-#             error_msg = f"Failed to download temp file: {str(e)}"
-#             logger.error(f"Task {task_id}: {error_msg}")
-#             raise Exception(error_msg)
+        # # 1. 从临时目录下载文件
+        # minio_client = get_minio_client()
         
-#         try:
-#             # 2. 加载和分块文档
-#             _, ext = os.path.splitext(file_name)
-#             ext = ext.lower()
+        # try:
+            # local_temp_path = f"/tmp/temp_{task_id}_{file_name}"  # 使用系统临时目录
+            # logger.info(f"Task {task_id}: Downloading file from MinIO: {temp_path} to {local_temp_path}")
+            # minio_client.fget_object(
+            #     bucket_name=settings.MINIO_BUCKET_NAME,
+            #     object_name=temp_path,
+            #     file_path=local_temp_path
+            # )
+            # logger.info(f"Task {task_id}: File downloaded successfully")
+        # except MinioException as e:
+        #     error_msg = f"Failed to download temp file: {str(e)}"
+        #     logger.error(f"Task {task_id}: {error_msg}")
+        #     raise Exception(error_msg)
+        
+        # 1. Tải tệp trực tiếp từ upload vào thư mục tạm        
+        local_temp_path = os.path.join(base_path, f"/tmp/temp_{task_id}_{file_name}")
+        save_dir = os.path.dirname(local_temp_path)
+        os.makedirs(save_dir, exist_ok=True)  # Important: create the folder if it doesn't exist yet.
+        logger.info(f"Task {task_id}: Saving file to {local_temp_path}")
+        try:
+            with open(task.document_upload.temp_path, 'rb') as file_to_copy:
+                with open(local_temp_path, 'wb') as temp_file:
+                    temp_file.write(file_to_copy.read())  # Ghi dữ liệu vào tệp cục bộ
+            logger.info(f"Task {task_id}: File saved successfully to {local_temp_path}")
+        except Exception as e:
+            error_msg = f"Failed to save file to local temp path: {str(e)}"
+            logger.error(f"Task {task_id}: {error_msg}")
+            raise Exception(error_msg)
+        
+        try:
+            # 2. 加载和分块文档
+            _, ext = os.path.splitext(file_name)
+            ext = ext.lower()
             
-#             logger.info(f"Task {task_id}: Loading document with extension {ext}")
-#             # 选择合适的加载器
-#             if ext == ".pdf":
-#                 loader = PyPDFLoader(local_temp_path)
-#             elif ext == ".docx":
-#                 loader = Docx2txtLoader(local_temp_path)
-#             elif ext == ".md":
-#                 loader = UnstructuredMarkdownLoader(local_temp_path)
-#             else:  # 默认使用文本加载器
-#                 loader = TextLoader(local_temp_path)
+            logger.info(f"Task {task_id}: Loading document with extension {ext}")
+            # 选择合适的加载器
+            if ext == ".pdf":
+                loader = PyPDFLoader(local_temp_path)
+            elif ext == ".docx":
+                loader = Docx2txtLoader(local_temp_path)
+            elif ext == ".md":
+                loader = UnstructuredMarkdownLoader(local_temp_path)
+            else:  # 默认使用文本加载器
+                loader = TextLoader(local_temp_path)
             
-#             logger.info(f"Task {task_id}: Loading document content")
-#             documents = loader.load()
-#             logger.info(f"Task {task_id}: Document loaded successfully")
+            logger.info(f"Task {task_id}: Loading document content")
+            documents = loader.load()
+            logger.info(f"Task {task_id}: Document loaded successfully")
             
-#             logger.info(f"Task {task_id}: Splitting document into chunks")
-#             text_splitter = RecursiveCharacterTextSplitter(
-#                 chunk_size=chunk_size,
-#                 chunk_overlap=chunk_overlap
-#             )
-#             chunks = text_splitter.split_documents(documents)
-#             logger.info(f"Task {task_id}: Document split into {len(chunks)} chunks")
+            logger.info(f"Task {task_id}: Splitting document into chunks")
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap
+            )
+            chunks = text_splitter.split_documents(documents)
+            logger.info(f"Task {task_id}: Document split into {len(chunks)} chunks")
             
-#             # 3. 创建向量存储
-#             logger.info(f"Task {task_id}: Initializing vector store")
-#             embeddings = EmbeddingsFactory.create()
+            # 3. 创建向量存储
+            logger.info(f"Task {task_id}: Initializing vector store")
+            embeddings = EmbeddingsFactory.create()
             
-#             vector_store = VectorStoreFactory.create(
-#                 store_type=settings.VECTOR_STORE_TYPE,
-#                 collection_name=f"kb_{kb_id}",
-#                 embedding_function=embeddings,
-#             )
+            vector_store = VectorStoreFactory.create(
+                store_type=settings.VECTOR_STORE_TYPE,
+                collection_name=f"kb_{kb_id}",
+                embedding_function=embeddings,
+            )
             
-#             # 4. 将临时文件移动到永久目录
-#             permanent_path = f"kb_{kb_id}/{file_name}"
-#             try:
-#                 logger.info(f"Task {task_id}: Moving file to permanent storage")
-#                 # 复制到永久目录
-#                 source = CopySource(settings.MINIO_BUCKET_NAME, temp_path)
-#                 minio_client.copy_object(
-#                     bucket_name=settings.MINIO_BUCKET_NAME,
-#                     object_name=permanent_path,
-#                     source=source
-#                 )
-#                 logger.info(f"Task {task_id}: File moved to permanent storage")
+            # 4. 将临时文件移动到永久目录
+            permanent_path = f"kb_{kb_id}/{file_name}"
+            # try:
+            #     logger.info(f"Task {task_id}: Moving file to permanent storage")
+            #     # 复制到永久目录
+            #     source = CopySource(settings.MINIO_BUCKET_NAME, temp_path)
+            #     minio_client.copy_object(
+            #         bucket_name=settings.MINIO_BUCKET_NAME,
+            #         object_name=permanent_path,
+            #         source=source
+            #     )
+            #     logger.info(f"Task {task_id}: File moved to permanent storage")
                 
-#                 # 删除临时文件
-#                 logger.info(f"Task {task_id}: Removing temporary file from MinIO")
-#                 minio_client.remove_object(
-#                     bucket_name=settings.MINIO_BUCKET_NAME,
-#                     object_name=temp_path
-#                 )
-#                 logger.info(f"Task {task_id}: Temporary file removed")
-#             except MinioException as e:
-#                 error_msg = f"Failed to move file to permanent storage: {str(e)}"
-#                 logger.error(f"Task {task_id}: {error_msg}")
-#                 raise Exception(error_msg)
+            #     # 删除临时文件
+            #     logger.info(f"Task {task_id}: Removing temporary file from MinIO")
+            #     minio_client.remove_object(
+            #         bucket_name=settings.MINIO_BUCKET_NAME,
+            #         object_name=temp_path
+            #     )
+            #     logger.info(f"Task {task_id}: Temporary file removed")
+            # except MinioException as e:
+            #     error_msg = f"Failed to move file to permanent storage: {str(e)}"
+            #     logger.error(f"Task {task_id}: {error_msg}")
+            #     raise Exception(error_msg)
+            try:
+                # Chuyển tệp từ thư mục tạm sang thư mục vĩnh viễn
+                shutil.copy(local_temp_path, permanent_path)
+                logger.info(f"Task {task_id}: File moved to permanent storage")
+            except Exception as e:
+                error_msg = f"Failed to move file to permanent storage: {str(e)}"
+                logger.error(f"Task {task_id}: {error_msg}")
+                raise Exception(error_msg)
             
-#             # 5. 创建文档记录
-#             logger.info(f"Task {task_id}: Creating document record")
-#             document = Document(
-#                 file_name=file_name,
-#                 file_path=permanent_path,
-#                 file_hash=task.document_upload.file_hash,
-#                 file_size=task.document_upload.file_size,
-#                 content_type=task.document_upload.content_type,
-#                 knowledge_base_id=kb_id
-#             )
-#             db.add(document)
-#             db.commit()
-#             db.refresh(document)
-#             logger.info(f"Task {task_id}: Document record created with ID {document.id}")
+            # 5. 创建文档记录
+            logger.info(f"Task {task_id}: Creating document record")
+            document = Document(
+                file_name=file_name,
+                file_path=permanent_path,
+                file_hash=task.document_upload.file_hash,
+                file_size=task.document_upload.file_size,
+                content_type=task.document_upload.content_type,
+                knowledge_base_id=kb_id
+            )
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+            logger.info(f"Task {task_id}: Document record created with ID {document.id}")
             
-#             # 6. 存储文档块
-#             logger.info(f"Task {task_id}: Storing document chunks")
-#             for i, chunk in enumerate(chunks):
-#                 # 为每个 chunk 生成唯一的 ID
-#                 chunk_id = hashlib.sha256(
-#                     f"{kb_id}:{file_name}:{chunk.page_content}".encode()
-#                 ).hexdigest()
+            # 6. 存储文档块
+            logger.info(f"Task {task_id}: Storing document chunks")
+            for i, chunk in enumerate(chunks):
+                # 为每个 chunk 生成唯一的 ID
+                chunk_id = hashlib.sha256(
+                    f"{kb_id}:{file_name}:{chunk.page_content}".encode()
+                ).hexdigest()
 
-#                 chunk.metadata["source"] = file_name
-#                 chunk.metadata["kb_id"] = kb_id
-#                 chunk.metadata["document_id"] = document.id
-#                 chunk.metadata["chunk_id"] = chunk_id
+                chunk.metadata["source"] = file_name
+                chunk.metadata["kb_id"] = kb_id
+                chunk.metadata["document_id"] = document.id
+                chunk.metadata["chunk_id"] = chunk_id
                 
-#                 doc_chunk = DocumentChunk(
-#                     id=chunk_id,  # 添加 ID 字段
-#                     document_id=document.id,
-#                     kb_id=kb_id,
-#                     file_name=file_name,
-#                     chunk_metadata={
-#                         "page_content": chunk.page_content,
-#                         **chunk.metadata
-#                     },
-#                     hash=hashlib.sha256(
-#                         (chunk.page_content + str(chunk.metadata)).encode()
-#                     ).hexdigest()
-#                 )
-#                 db.add(doc_chunk)
-#                 if i > 0 and i % 100 == 0:
-#                     logger.info(f"Task {task_id}: Stored {i} chunks")
-#                     db.commit()  # 每 100 条提交一次，避免事务太大
+                doc_chunk = DocumentChunk(
+                    id=chunk_id,  # 添加 ID 字段
+                    document_id=document.id,
+                    kb_id=kb_id,
+                    file_name=file_name,
+                    chunk_metadata={
+                        "page_content": chunk.page_content,
+                        **chunk.metadata
+                    },
+                    hash=hashlib.sha256(
+                        (chunk.page_content + str(chunk.metadata)).encode()
+                    ).hexdigest()
+                )
+                db.add(doc_chunk)
+                if i > 0 and i % 100 == 0:
+                    logger.info(f"Task {task_id}: Stored {i} chunks")
+                    db.commit()  # 每 100 条提交一次，避免事务太大
             
-#             # 7. 添加到向量存储
-#             logger.info(f"Task {task_id}: Adding chunks to vector store")
-#             vector_store.add_documents(chunks)
-#             # 移除 persist() 调用，因为新版本不需要
-#             logger.info(f"Task {task_id}: Chunks added to vector store")
+            # 7. 添加到向量存储
+            logger.info(f"Task {task_id}: Adding chunks to vector store")
+            vector_store.add_documents(chunks)
+            # 移除 persist() 调用，因为新版本不需要
+            logger.info(f"Task {task_id}: Chunks added to vector store")
             
-#             # 8. 更新任务状态
-#             logger.info(f"Task {task_id}: Updating task status to completed")
-#             task.status = "completed"
-#             task.document_id = document.id  # 更新为新创建的文档ID
+            # 8. 更新任务状态
+            logger.info(f"Task {task_id}: Updating task status to completed")
+            task.status = "completed"
+            task.document_id = document.id  # 更新为新创建的文档ID
             
-#             # 9. 更新上传记录状态
-#             upload = task.document_upload  # 直接通过关系获取
-#             if upload:
-#                 logger.info(f"Task {task_id}: Updating upload record status to completed")
-#                 upload.status = "completed"
+            # 9. 更新上传记录状态
+            upload = task.document_upload  # 直接通过关系获取
+            if upload:
+                logger.info(f"Task {task_id}: Updating upload record status to completed")
+                upload.status = "completed"
             
-#             db.commit()
-#             logger.info(f"Task {task_id}: Processing completed successfully")
+            db.commit()
+            logger.info(f"Task {task_id}: Processing completed successfully")
             
-#         finally:
-#             # 清理本地临时文件
-#             try:
-#                 if os.path.exists(local_temp_path):
-#                     logger.info(f"Task {task_id}: Cleaning up local temp file")
-#                     os.remove(local_temp_path)
-#                     logger.info(f"Task {task_id}: Local temp file cleaned up")
-#             except Exception as e:
-#                 logger.warning(f"Task {task_id}: Failed to clean up local temp file: {str(e)}")
+        finally:
+            # 清理本地临时文件
+            try:
+                if os.path.exists(local_temp_path):
+                    logger.info(f"Task {task_id}: Cleaning up local temp file")
+                    os.remove(local_temp_path)
+                    logger.info(f"Task {task_id}: Local temp file cleaned up")
+            except Exception as e:
+                logger.warning(f"Task {task_id}: Failed to clean up local temp file: {str(e)}")
         
-#     except Exception as e:
-#         logger.error(f"Task {task_id}: Error processing document: {str(e)}")
-#         logger.error(f"Task {task_id}: Stack trace: {traceback.format_exc()}")
-#         task.status = "failed"
-#         task.error_message = str(e)
-#         db.commit()
+    except Exception as e:
+        logger.error(f"Task {task_id}: Error processing document: {str(e)}")
+        logger.error(f"Task {task_id}: Stack trace: {traceback.format_exc()}")
+        task.status = "failed"
+        task.error_message = str(e)
+        db.commit()
         
-#         # 清理临时文件
-#         try:
-#             logger.info(f"Task {task_id}: Cleaning up temporary file after error")
-#             minio_client.remove_object(
-#                 bucket_name=settings.MINIO_BUCKET_NAME,
-#                 object_name=temp_path
-#             )
-#             logger.info(f"Task {task_id}: Temporary file cleaned up after error")
-#         except:
-#             logger.warning(f"Task {task_id}: Failed to clean up temporary file after error")
-#     finally:
-#         # if we create the db session, we need to close it
-#         if should_close_db and db:
-#             db.close()
+        # 清理临时文件
+        # try:
+        #     logger.info(f"Task {task_id}: Cleaning up temporary file after error")
+        #     minio_client.remove_object(
+        #         bucket_name=settings.MINIO_BUCKET_NAME,
+        #         object_name=temp_path
+        #     )
+        #     logger.info(f"Task {task_id}: Temporary file cleaned up after error")
+        # except:
+        #     logger.warning(f"Task {task_id}: Failed to clean up temporary file after error")
+        try:
+            logger.info(f"Task {task_id}: Cleaning up temporary file after error")
+            os.remove(local_temp_path)
+            logger.info(f"Task {task_id}: Temporary file cleaned up after error")
+        except:
+            logger.warning(f"Task {task_id}: Failed to clean up temporary file after error")
+    finally:
+        # if we create the db session, we need to close it
+        if should_close_db and db:
+            db.close()
