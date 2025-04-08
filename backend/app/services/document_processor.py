@@ -182,33 +182,29 @@ class PreviewResult(BaseModel):
 async def preview_document(file_path: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> PreviewResult:
     """Step 2: Generate preview chunks"""
     # Get file from MinIO
-    # minio_client = get_minio_client()
+    minio_client = get_minio_client()
     _, ext = os.path.splitext(file_path)
     ext = ext.lower()
     
     # Download to temp file
-    # with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
-    #     minio_client.fget_object(
-    #         bucket_name=settings.MINIO_BUCKET_NAME,
-    #         object_name=file_path,
-    #         file_path=temp_file.name
-    #     )
-    #     temp_path = temp_file.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+        minio_client.fget_object(
+            bucket_name=settings.MINIO_BUCKET_NAME,
+            object_name=file_path,
+            file_path=temp_file.name
+        )
+        temp_path = temp_file.name
     
     try:
         # Select appropriate loader
         if ext == ".pdf":
-            # loader = PyPDFLoader(temp_path)
-            loader = PyPDFLoader(file_path)
+            loader = PyPDFLoader(temp_path)
         elif ext == ".docx":
-            # loader = Docx2txtLoader(temp_path)
-            loader = Docx2txtLoader(file_path)
+            loader = Docx2txtLoader(temp_path)
         elif ext == ".md":
-            # loader = UnstructuredMarkdownLoader(temp_path)
-            loader = UnstructuredMarkdownLoader(file_path)
+            loader = UnstructuredMarkdownLoader(temp_path)
         else:  # Default to text loader
-            # loader = TextLoader(temp_path)
-            loader = TextLoader(file_path)
+            loader = TextLoader(temp_path)
         
         # Load and split the document
         documents = loader.load()
@@ -265,35 +261,20 @@ async def process_document_background(
         task.status = "processing"
         db.commit()
         
-        # # 1. 从临时目录下载文件
-        # minio_client = get_minio_client()
+        # 1. 从临时目录下载文件
+        minio_client = get_minio_client()
         
-        # try:
-            # local_temp_path = f"/tmp/temp_{task_id}_{file_name}"  # 使用系统临时目录
-            # logger.info(f"Task {task_id}: Downloading file from MinIO: {temp_path} to {local_temp_path}")
-            # minio_client.fget_object(
-            #     bucket_name=settings.MINIO_BUCKET_NAME,
-            #     object_name=temp_path,
-            #     file_path=local_temp_path
-            # )
-            # logger.info(f"Task {task_id}: File downloaded successfully")
-        # except MinioException as e:
-        #     error_msg = f"Failed to download temp file: {str(e)}"
-        #     logger.error(f"Task {task_id}: {error_msg}")
-        #     raise Exception(error_msg)
-        
-        # 1. Tải tệp trực tiếp từ upload vào thư mục tạm        
-        local_temp_path = os.path.join(base_path, f"/tmp/temp_{task_id}_{file_name}")
-        save_dir = os.path.dirname(local_temp_path)
-        os.makedirs(save_dir, exist_ok=True)  # Important: create the folder if it doesn't exist yet.
-        logger.info(f"Task {task_id}: Saving file to {local_temp_path}")
         try:
-            with open(task.document_upload.temp_path, 'rb') as file_to_copy:
-                with open(local_temp_path, 'wb') as temp_file:
-                    temp_file.write(file_to_copy.read())  # Ghi dữ liệu vào tệp cục bộ
-            logger.info(f"Task {task_id}: File saved successfully to {local_temp_path}")
-        except Exception as e:
-            error_msg = f"Failed to save file to local temp path: {str(e)}"
+            local_temp_path = f"/tmp/temp_{task_id}_{file_name}"  # 使用系统临时目录
+            logger.info(f"Task {task_id}: Downloading file from MinIO: {temp_path} to {local_temp_path}")
+            minio_client.fget_object(
+                bucket_name=settings.MINIO_BUCKET_NAME,
+                object_name=temp_path,
+                file_path=local_temp_path
+            )
+            logger.info(f"Task {task_id}: File downloaded successfully")
+        except MinioException as e:
+            error_msg = f"Failed to download temp file: {str(e)}"
             logger.error(f"Task {task_id}: {error_msg}")
             raise Exception(error_msg)
         
@@ -337,33 +318,25 @@ async def process_document_background(
             
             # 4. 将临时文件移动到永久目录
             permanent_path = f"kb_{kb_id}/{file_name}"
-            # try:
-            #     logger.info(f"Task {task_id}: Moving file to permanent storage")
-            #     # 复制到永久目录
-            #     source = CopySource(settings.MINIO_BUCKET_NAME, temp_path)
-            #     minio_client.copy_object(
-            #         bucket_name=settings.MINIO_BUCKET_NAME,
-            #         object_name=permanent_path,
-            #         source=source
-            #     )
-            #     logger.info(f"Task {task_id}: File moved to permanent storage")
-                
-            #     # 删除临时文件
-            #     logger.info(f"Task {task_id}: Removing temporary file from MinIO")
-            #     minio_client.remove_object(
-            #         bucket_name=settings.MINIO_BUCKET_NAME,
-            #         object_name=temp_path
-            #     )
-            #     logger.info(f"Task {task_id}: Temporary file removed")
-            # except MinioException as e:
-            #     error_msg = f"Failed to move file to permanent storage: {str(e)}"
-            #     logger.error(f"Task {task_id}: {error_msg}")
-            #     raise Exception(error_msg)
             try:
-                # Chuyển tệp từ thư mục tạm sang thư mục vĩnh viễn
-                shutil.copy(local_temp_path, permanent_path)
+                logger.info(f"Task {task_id}: Moving file to permanent storage")
+                # 复制到永久目录
+                source = CopySource(settings.MINIO_BUCKET_NAME, temp_path)
+                minio_client.copy_object(
+                    bucket_name=settings.MINIO_BUCKET_NAME,
+                    object_name=permanent_path,
+                    source=source
+                )
                 logger.info(f"Task {task_id}: File moved to permanent storage")
-            except Exception as e:
+                
+                # 删除临时文件
+                logger.info(f"Task {task_id}: Removing temporary file from MinIO")
+                minio_client.remove_object(
+                    bucket_name=settings.MINIO_BUCKET_NAME,
+                    object_name=temp_path
+                )
+                logger.info(f"Task {task_id}: Temporary file removed")
+            except MinioException as e:
                 error_msg = f"Failed to move file to permanent storage: {str(e)}"
                 logger.error(f"Task {task_id}: {error_msg}")
                 raise Exception(error_msg)
@@ -452,18 +425,12 @@ async def process_document_background(
         db.commit()
         
         # 清理临时文件
-        # try:
-        #     logger.info(f"Task {task_id}: Cleaning up temporary file after error")
-        #     minio_client.remove_object(
-        #         bucket_name=settings.MINIO_BUCKET_NAME,
-        #         object_name=temp_path
-        #     )
-        #     logger.info(f"Task {task_id}: Temporary file cleaned up after error")
-        # except:
-        #     logger.warning(f"Task {task_id}: Failed to clean up temporary file after error")
         try:
             logger.info(f"Task {task_id}: Cleaning up temporary file after error")
-            os.remove(local_temp_path)
+            minio_client.remove_object(
+                bucket_name=settings.MINIO_BUCKET_NAME,
+                object_name=temp_path
+            )
             logger.info(f"Task {task_id}: Temporary file cleaned up after error")
         except:
             logger.warning(f"Task {task_id}: Failed to clean up temporary file after error")

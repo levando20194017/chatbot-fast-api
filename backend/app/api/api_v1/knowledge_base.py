@@ -25,8 +25,8 @@ from app.schemas.knowledge import (
 # from app.services.document_processor import process_document_background, upload_document, preview_document, PreviewResult
 from app.services.document_processor import process_document_background, preview_document, PreviewResult
 from app.core.config import settings
-# from app.core.minio import get_minio_client
-# from minio.error import MinioException
+from app.core.minio import get_minio_client
+from minio.error import MinioException
 from app.services.vector_store import VectorStoreFactory
 from app.services.embedding.embedding_factory import EmbeddingsFactory
 import os
@@ -163,65 +163,39 @@ async def delete_knowledge_base(
     
     try:
         # Get all document file paths before deletion
-        # document_paths = [doc.file_path for doc in kb.documents]
+        document_paths = [doc.file_path for doc in kb.documents]
         
-        # # Initialize services
-        # minio_client = get_minio_client()
-        # embeddings = EmbeddingsFactory.create()
+        # Initialize services
+        minio_client = get_minio_client()
+        embeddings = EmbeddingsFactory.create()
 
-        # vector_store = VectorStoreFactory.create(
-        #     store_type=settings.VECTOR_STORE_TYPE,
-        #     collection_name=f"kb_{kb_id}",
-        #     embedding_function=embeddings,
-        # )
+        vector_store = VectorStoreFactory.create(
+            store_type=settings.VECTOR_STORE_TYPE,
+            collection_name=f"kb_{kb_id}",
+            embedding_function=embeddings,
+        )
         
-        # # Clean up external resources first
-        # cleanup_errors = []
-        
-        # # 1. Clean up MinIO files
-        # try:
-        #     # Delete all objects with prefix kb_{kb_id}/
-        #     objects = minio_client.list_objects(settings.MINIO_BUCKET_NAME, prefix=f"kb_{kb_id}/")
-        #     for obj in objects:
-        #         minio_client.remove_object(settings.MINIO_BUCKET_NAME, obj.object_name)
-        #     logger.info(f"Cleaned up MinIO files for knowledge base {kb_id}")
-        # except MinioException as e:
-        #     cleanup_errors.append(f"Failed to clean up MinIO files: {str(e)}")
-        #     logger.error(f"MinIO cleanup error for kb {kb_id}: {str(e)}")
-        
-        # # 2. Clean up vector store
-        # try:
-        #     vector_store._store.delete_collection(f"kb_{kb_id}")
-        #     logger.info(f"Cleaned up vector store for knowledge base {kb_id}")
-        # except Exception as e:
-        #     cleanup_errors.append(f"Failed to clean up vector store: {str(e)}")
-        #     logger.error(f"Vector store cleanup error for kb {kb_id}: {str(e)}")
-        kb_folder_path = os.path.join(base_path, f"kb_{kb_id}")
+        # Clean up external resources first
         cleanup_errors = []
-
-        if os.path.exists(kb_folder_path):
-            try:
-                shutil.rmtree(kb_folder_path)
-                logger.info(f"Deleted local files for kb_{kb_id}")
-            except Exception as e:
-                cleanup_errors.append(f"Failed to delete local files: {str(e)}")
-                logger.error(f"Local file delete error for kb_{kb_id}: {str(e)}")
-        else:
-            logger.warning(f"Local folder for kb_{kb_id} does not exist")
-
-        # 2. Delete vector store (nếu dùng vector store như FAISS, Chroma,...)
+        
+        # 1. Clean up MinIO files
         try:
-            embeddings = EmbeddingsFactory.create()
-            vector_store = VectorStoreFactory.create(
-                store_type=settings.VECTOR_STORE_TYPE,
-                collection_name=f"kb_{kb_id}",
-                embedding_function=embeddings,
-            )
+            # Delete all objects with prefix kb_{kb_id}/
+            objects = minio_client.list_objects(settings.MINIO_BUCKET_NAME, prefix=f"kb_{kb_id}/")
+            for obj in objects:
+                minio_client.remove_object(settings.MINIO_BUCKET_NAME, obj.object_name)
+            logger.info(f"Cleaned up MinIO files for knowledge base {kb_id}")
+        except MinioException as e:
+            cleanup_errors.append(f"Failed to clean up MinIO files: {str(e)}")
+            logger.error(f"MinIO cleanup error for kb {kb_id}: {str(e)}")
+        
+        # 2. Clean up vector store
+        try:
             vector_store._store.delete_collection(f"kb_{kb_id}")
-            logger.info(f"Deleted vector store for kb_{kb_id}")
+            logger.info(f"Cleaned up vector store for knowledge base {kb_id}")
         except Exception as e:
-            cleanup_errors.append(f"Failed to delete vector store: {str(e)}")
-            logger.error(f"Vector store delete error for kb_{kb_id}: {str(e)}")
+            cleanup_errors.append(f"Failed to clean up vector store: {str(e)}")
+            logger.error(f"Vector store cleanup error for kb {kb_id}: {str(e)}")
         
         # Finally, delete database records in a single transaction
         db.delete(kb)
@@ -283,30 +257,21 @@ async def upload_kb_documents(
             continue
         
         # 3. Ghi file vào máy
-        # temp_path = f"kb_{kb_id}/temp/{file.filename}"
-        # await file.seek(0)
-        # try:
-        #     minio_client = get_minio_client()
-        #     file_size = len(file_content)  # 使用之前读取的文件内容长度
-        #     minio_client.put_object(
-        #         bucket_name=settings.MINIO_BUCKET_NAME,
-        #         object_name=temp_path,
-        #         data=file.file,
-        #         length=file_size,  # 指定文件大小
-        #         content_type=file.content_type
-        #     )
-        # except MinioException as e:
-        #     logger.error(f"Failed to upload file to MinIO: {str(e)}")
-        #     raise HTTPException(status_code=500, detail="Failed to upload file")
-        temp_path = os.path.join(base_path, f"kb_{kb_id}/temp/{file.filename}")
-        save_dir = os.path.dirname(temp_path)
-        os.makedirs(save_dir, exist_ok=True)  # Important: create the folder if it doesn't exist yet.
+        temp_path = f"kb_{kb_id}/temp/{file.filename}"
+        await file.seek(0)
         try:
-            with open(temp_path, "wb") as f:
-                f.write(file_content)
-        except Exception as e:
-            logger.error(f"Failed to save file: {str(e)}")
-            raise HTTPException(status_code=500, detail="upload file failed!")
+            minio_client = get_minio_client()
+            file_size = len(file_content)  # 使用之前读取的文件内容长度
+            minio_client.put_object(
+                bucket_name=settings.MINIO_BUCKET_NAME,
+                object_name=temp_path,
+                data=file.file,
+                length=file_size,  # 指定文件大小
+                content_type=file.content_type
+            )
+        except MinioException as e:
+            logger.error(f"Failed to upload file to MinIO: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to upload file")
         
          # 4. Ghi vào database
         upload = DocumentUpload(
