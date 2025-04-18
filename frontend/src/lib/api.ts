@@ -48,7 +48,7 @@ export async function fetchApi(fullUrl: string, options: FetchOptions = {}) {
   }
 
   try {
-    const response = await fetch(`${ "http://10.1.35.124:8000" + fullUrl}`, config);
+    const response = await fetch(`${ "http://127.0.0.1:8000" + fullUrl}`, config);
 
     if (response.status === 401) {
       if (typeof window !== 'undefined') {
