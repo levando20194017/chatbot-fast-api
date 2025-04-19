@@ -10,29 +10,29 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api"  # API version string
 
     # MySQL settings
-    MYSQL_SERVER: str = os.getenv("MYSQL_SERVER", "localhost")
-    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "123456")
-    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "rag-chatbot")
-    SQLALCHEMY_DATABASE_URI: Optional[str] = None
+    # MYSQL_SERVER: str = os.getenv("MYSQL_SERVER", "localhost")
+    # MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
+    # MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
+    # MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "123456")
+    # MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "rag-chatbot")
+    SQLALCHEMY_DATABASE_URI: Optional[str] = "postgresql://postgres.ogaerqwpuacugwjlafrx:Levando07082001@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
     
     # Postgre settings
-    # POSTGRES_SERVER : str = os.getenv("POSTGRES_SERVER", "localhost")
-    # POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
-    # POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    # POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "123456")
-    # POSTGRES_DATABASE: str = os.getenv("POSTGRES_DATABASE", "rag-chatbot")
+    POSTGRES_SERVER : str = os.getenv("POSTGRES_SERVER", "localhost")
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "123456")
+    POSTGRES_DATABASE: str = os.getenv("POSTGRES_DATABASE", "rag-chatbot")
 
     @property
     def get_database_url(self) -> str:
         if self.SQLALCHEMY_DATABASE_URI:
             return self.SQLALCHEMY_DATABASE_URI
         return (
-            f"mysql+mysqlconnector://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
-            f"@{self.MYSQL_SERVER}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
-            # f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            # f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DATABASE}"
+            # f"mysql+mysqlconnector://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
+            # f"@{self.MYSQL_SERVER}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
+            f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DATABASE}"
         )
 
     # JWT settings
