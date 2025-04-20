@@ -29,7 +29,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # Cho phép các domain này gọi API
+    allow_origins=["*"],  # Cho phép các domain này gọi API
     allow_credentials=True,
     allow_methods=["*"],  # Cho phép tất cả phương thức (GET, POST, PUT, DELETE, ...)
     allow_headers=["*"],  # Cho phép tất cả headers
